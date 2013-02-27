@@ -8,7 +8,9 @@ Readium.Models.EpubReader = Backbone.Model.extend({
     initialize : function (attributes, options) {
 
         var that = this;
+        var currentSpineItem = options.epubController.get("spine_position");
         this.epubSpine = this.get("model");
+
 
         // Rendering strategy option
         // 
@@ -16,16 +18,42 @@ Readium.Models.EpubReader = Backbone.Model.extend({
 
 
         this.loadSpineItems(options.epubController, options.viewerSettings);
-        this.renderPageView(2, false, undefined); // TEMPORARY
+        this.showSpineItem(currentSpineItem);
     },
 
     // ---- Public interface ------------------------------------------------------------------------
+
+    // REFACTORING CANDIDATE: This will only work for reflowable page views; there is currently not a mapping between
+    //   spine items and the page views in which they are rendered, for FXL epubs. When support for FXL is included, this 
+    //   abstraction will include more.
+    showSpineItem : function (spineIndex) {
+
+        this.renderPageView(spineIndex, false, undefined);
+
+        // Might want to return the current pageView here
+    },
+
+    // Rationale: As with the CFI library API, it is up to calling code to ensure that the content document CFI component is
+    //   is a reference into the content document pointed to by the supplied spine index. 
+    showCFI : function (spineIndex, contentDocumentCFIComponent) {
+
+        this.showSpineItem(spineIndex);
+
+        // Show the element by passing the CFI fragment to the current view
+    },
+
+    showElementId : function (spineIndex, elementId) { 
+
+        // Rationale: Try to locate the element before switching to a new page view try/catch
+        this.getCurrentPageView().goToHashFragment(elementId);
+        this.showSpineItem(spineIndex)
+    },
 
     nextPage : function () {
 
         var currentPageView = this.getCurrentPageView();
         if (currentPageView.onLastPage()) {
-            this.goToNextPageView();
+            this.showNextPageView();
         }
         else {
             currentPageView.pages.goRight();
@@ -36,21 +64,12 @@ Readium.Models.EpubReader = Backbone.Model.extend({
 
         var currentPageView = this.getCurrentPageView();
         if (currentPageView.onFirstPage()) {
-            this.goToPreviousPageView();
+            this.showPreviousPageView();
         }
         else {
             currentPageView.pages.goLeft();
         }
     },
-
-
-    // goToHref() <--- Probably not here, dereferencing hrefs can be in the epub controller thingy
-    // goToCFI() <--- Hmm, not sure how to handle this exactly. 
-    // goToSpineItem() <--- Gonna need this, for sure. 
-    // goToId() <---- Supply a spine item for this one.
-
-
-
 
     // changeMargin()
     // changeFontSize()
@@ -109,7 +128,7 @@ Readium.Models.EpubReader = Backbone.Model.extend({
         }
     },
 
-    goToNextPageView : function () {
+    showNextPageView : function () {
 
         var nextPageViewIndex;
         if (this.hasNextPageView()) {
@@ -118,7 +137,7 @@ Readium.Models.EpubReader = Backbone.Model.extend({
         }
     },
 
-    goToPreviousPageView : function () {
+    showPreviousPageView : function () {
 
         var previousPageViewIndex;
         if (this.hasPreviousPageView()) {
@@ -201,115 +220,4 @@ Readium.Models.EpubReader = Backbone.Model.extend({
     //     var size = this.get("font_size");
     //     this.set({font_size: size - 1})
     // },
-
-    // toggleToc: function() {
-    //     var vis = this.get("toc_visible");
-    //     this.set("toc_visible", !vis);
-    // },
-
-    // // Description: Obtains the href and hash (if it exists) to set as the current "position"
-    // //    of the epub. Any views and models listening to epub attributes are informed through
-    // //    the backbone event broadcast.
-    // // Arguments (
-    // //   href (URL): The url and hash fragment that indicates the position in the epub to set as
-    // //   the epub's current position. This argument either has to be the absolute path of the resource in 
-    // //   the filesystem, or the path of the resource RELATIVE to the package document.
-    // //   When a URI is resolved by the package document model, it assumes that any relative path for a resource is
-    // //   relative to the package document.
-    // // )
-    // goToHref: function(href) {
-    //     // URL's with hash fragments require special treatment, so
-    //     // first thing is to split off the hash frag from the rest
-    //     // of the url:
-    //     var splitUrl = href.match(/([^#]*)(?:#(.*))?/);
-
-    //     // Check if the hash contained a CFI reference
-    //     if (splitUrl[2] && splitUrl[2].match(/epubcfi/)) {
-
-    //         this.handleCFIReference(splitUrl[2]);
-    //     }
-    //     // The href is a standard hash fragment
-    //     else {
-
-    //         // REFACTORING CANDIDATE: Move this into its own "private" method
-    //         if(splitUrl[1]) {
-    //             var spine_pos = this.packageDocument.spineIndexFromHref(splitUrl[1]);
-
-    //             if (this.get("media_overlay_controller").mo &&
-    //                 this.get("media_overlay_controller").mo.get("has_started_playback")) {
-                    
-    //                 this.setSpinePos(spine_pos, false, false, splitUrl[2]);
-    //             }
-    //             else {
-    //                 this.setSpinePos(spine_pos, false, true, splitUrl[2]);  
-    //             }   
-
-    //             this.set("hash_fragment", splitUrl[2]);
-    //         }
-    //     }
-    // },
-
-    // // Description: Sets the current spine position for the epub, checking if the spine
-    // //   item is already rendered. 
-    // // Arguments (
-    // //   pos (integer): The index of the spine element to set as the current spine position
-    // //   goToLastPageOfSection (boolean): Set the viewer to the last page of the spine item (content document/svg)
-    // //     that will be loaded.
-    // //   reRenderSpinePos (boolean): Force the spine item to be re-rendered, regardless of whether it is the 
-    // //     currently set spine item.
-    // //   goToHashFragmentId: Set the view position to the element with the specified id. This parameter 
-    // //     overrides the behaviour of "goToLastPageOfSection"
-    // //  )
-    // // REFACTORING CANDIDATE: The abstraction here is getting sloppy, as goToHashFragmentId overrides goToLastPageOfSection
-    // //   and generally, the behaviour of this method is not entirely clear from its name. Perhaps a simple renaming of the
-    // //   method would suffice? Additionally, the internal impementation could be reviewed to tightened up (comments below).
-    // setSpinePos: function(pos, goToLastPageOfSection, reRenderSpinePos, goToHashFragmentId) {
-
-    //     // check for invalid spine position
-    //     if (pos < 0 || pos >= this.packageDocument.spineLength()) {
-            
-    //         return;
-    //     }
-
-    //     var spineItems = this.get("rendered_spine_items");
-    //     var spinePosIsRendered = spineItems.indexOf(pos) >=0 ? true : false;
-    //     var renderedItems;
-
-    //     // REFACTORING CANDIDATE: There is a somewhat hidden dependency here between the paginator
-    //     //   and the setting of the spine_position. The pagination strategy selector re-renders based on the currently
-    //     //   set spine_position on this model. The pagination strategy selector has a reference to this model, which is 
-    //     //   how it accesses the new spine_position, through the "getCurrentSection" method. 
-    //     //   This would be clearer if the spine_position to set were passed explicitly to the paginator. 
-    //     this.set("spine_position", pos);
-
-    //     // REFACTORING CANDIDATE: This event should only be triggered for fixed layout sections
-    //     this.trigger("FXL_goToPage");
-
-    //     // Render the new spine position if it is not already rendered. Otherwise, check if a re-render should
-    //     // be forced (in case a new CFI has to be injected, for example). 
-    //     if (!spinePosIsRendered) {
-
-    //         renderedItems = this.paginator.renderSpineItems(goToLastPageOfSection, goToHashFragmentId);
-    //         this.set("rendered_spine_items", renderedItems);
-    //     }
-    //     else {
-
-    //         if (reRenderSpinePos) {
-
-    //             this.removeLastPageCFI();
-    //             renderedItems = this.paginator.renderSpineItems(goToLastPageOfSection, goToHashFragmentId);
-    //             this.set("rendered_spine_items", renderedItems);                
-    //         }
-    //         else {
-
-    //             if (!this.isFixedLayout() && goToHashFragmentId) {
-    //                 this.paginator.v.goToHashFragment(goToHashFragmentId);
-    //             }
-    //         }
-    //     }
-    // },
-
-    // // Private helpers
-
-
 });

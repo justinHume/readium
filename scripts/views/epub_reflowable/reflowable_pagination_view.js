@@ -187,6 +187,9 @@ Readium.Views.ReflowablePaginationView = Backbone.View.extend({
                 //console.log(fragment + " is on page " + page);
                 this.pages.goToPage(page);	
 			}
+            else {
+                // Throw an exception here 
+            }
 		}
 		// else false alarm no work to do
 	},
